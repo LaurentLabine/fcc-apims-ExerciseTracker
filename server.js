@@ -28,8 +28,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // for parsing multipart/form-data
 app.use(express.static('public'));
 
-// const user = new User({ userId: 'Bob' });
-
 const logSchema = new Schema({
   description: {type: String, required : true},
   duration: {type: Number, required: true},
@@ -50,46 +48,54 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html')
 });
 
-app.get("/api/exercise/log", (req, res) => {//Test URL : http://localhost:3000/api/exercise/log?userId=lazy_marsupial
+app.get("/api/exercise/log", (req, res) => {
 console.log("Get Exercise log")
 var userId = req.query.userId
-var limit = req.query.limit === undefined? 10 : req.query.limit
+var limit = parseInt(req.query.limit)
 
-if (userId === undefined) {//http://localhost:3000/api/exercise/log/?userId=5fd24aac7601da4bf48ed5ea
-  res.json({Error: "Invalid Query : No username"})
+if (userId === undefined) {
+  return res.json({Error: "Invalid Query : No username"})
 } else if(req.query.from === undefined && req.query.to === undefined ){
-  console.log("No Dates - Print complete Log")
-
-console.log("Searching full log for id: " + userId)
-
-User.findOne({_id: userId}, (err, doc) => {
+console.log("No Dates - Print complete Log for ID: " + userId)
+if(isNaN(limit)){//no limit - return everything
+console.log("Unlimited!! - Pull all the logs!")
+User.findOne({_id: userId},{__v:0}, (err, doc) => {
   if(err) console.error(err)
   if(doc === null) return console.log("Couldn't find doc")
-
-  res.json(doc)
+  return res.json(doc)
 })
+} else{//limit.  Use the limit
+console.log("Limited! - Pull  : " + limit + " logs!")
+User.findOne({_id: userId},{ __v:0,"log": { "$slice": limit } }, (err, doc) => {
+  if(err) console.error(err)
+  console.log("DOC" + doc)
+  if(doc === null) return console.log("Couldn't find doc")
+  return res.json(doc)
+})
+}
 
 } else {//All parameters there.  Search for logs
- User.findOne({_id: userId},(err, doc) => {
+ User.findOne({_id: userId},{__v:0}, (err, doc) => {
    if(err) console.error(err)
-console.log("Searching with following params : \nuserId: " + userId + "\nFrom : " + req.query.from + ",\nTo : " + req.query.to + ",\nlimit : " + parseFloat(limit)) 
+console.log("Searching with following params : \nuserId: " + userId + "\nFrom : " + req.query.from + ",\nTo : " + req.query.to + ",\nlimit : " + parseInt(limit)) 
+
+if(doc === null) return console.log("Nothing Found")
 
 var from = new Date(req.query.from)
 var to = new Date(req.query.to)
 var obj = doc.log
 var result = {_id: doc._id, username: doc.username, from: from.toDateString(), to:to.toDateString(), count:0, log: []}
 
-
-console.log("Obj : " + obj)
-
 var new_obj_array = obj.filter((obj) => {
-
   var logDate = new Date(obj.date)
-    console.log(logDate.toDateString())
-if(logDate > from && logDate < to && result.count< limit){
+  console.log("limit : " + limit)
+
+if(logDate >= from && logDate <= to && (result.count < limit || isNaN(limit))){
+  console.log("WERE IN with " + doc.count + " docs")
   var exLog = {description: "", duration: 0, date: ""}
-  result.count++;
-  console.log(logDate + " Made It!")
+    result.count++;
+
+  //Building response Log Object
   exLog.description = obj.description
   exLog.duration = obj.duration
   exLog.date = obj.date
@@ -97,11 +103,7 @@ if(logDate > from && logDate < to && result.count< limit){
   result.log.push(exLog)
   }
   })
-
-console.log("Result : " + result.log)
-
-  console.log("New Obj : " + new_obj_array)
-  res.json(result)
+  return res.json(result)
  })
 }})
 
@@ -118,7 +120,6 @@ app.post("/api/exercise/new-user", (req, res) => {
 })
 
 app.get("/api/exercise/users", (req, res) => {
-    //https://www.w3schools.com/nodejs/nodejs_mongodb_find.asp
   User.find({},{__v:0, exerciseLog:0},(err, doc) => {
     if(err) console.error(err)
     res.json(doc)
@@ -127,8 +128,6 @@ app.get("/api/exercise/users", (req, res) => {
 
 //Create a new Entry for exerciseLog field for a specific user
 app.post("/api/exercise/add", (req, res) => {
-  console.log(req.body);
-  console.log(req.body.date)
 
 var date = req.body.date === ""? new Date(Date.now()) :  new Date(req.body.date)//If no date is provided, we use Now
 
@@ -138,12 +137,10 @@ var date = req.body.date === ""? new Date(Date.now()) :  new Date(req.body.date)
     date: date.toDateString()
   })
 
-  User.updateOne({_id: req.body.userId},{ $inc: {"count":1 }, $push: {"log":log}}/*,{$push: {"log":log}}*/, (err,doc) => {
+  User.updateOne({_id: req.body.userId},{ $inc: {"count":1 }, $push: {"log":log}}, (err,doc) => {
     if(err) console.log(err)
 
-    console.log("updated doc" + doc)
       User.findOne({_id: req.body.userId},{__v:0, log:0}, (err, doc) => {
-        console.log("doc : " + doc)
         if(err) return console.error(err)
           var resObject = {}
           resObject._id = doc._id
